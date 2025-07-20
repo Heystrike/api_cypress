@@ -11,18 +11,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    # Executa diariamente às 2:00 AM UTC
+  schedule:    # Executa diariamente às 2:00 AM UTC
     - cron: "0 2 * * *"
 
 jobs:
   cypress-run:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chrome]
 
     steps:
       - name: Checkout código
@@ -50,28 +44,25 @@ jobs:
             
             # Inicia a API em background
             nohup npm start > ../api.log 2>&1 &
-            cd ..
-          else
-            echo "⚠️ Não foi possível clonar o repositório da API"
-            echo "⚠️ Os testes serão executados mas podem falhar se a API não estiver disponível"
-            echo "⚠️ Para uso em produção, certifique-se de que a API está acessível"
+            echo "✅ API iniciada em background"
             
-            # Cria um log vazio para evitar erros
-            touch api.log
+            # Aguarda um momento para a API inicializar
+            sleep 5
+            
+          else
+            echo "⚠️ Não foi possível clonar a API, assumindo API já rodando"
           fi
+
+      - name: Aguardar API estar disponível
+        run: |
+          echo "🔄 Aguardando API ficar disponível..."
           
-          # Aguarda a API inicializar (se foi iniciada)
-          echo "Aguardando API inicializar..."
+          # Aguarda até 60 segundos pela API
           for i in {1..30}; do
-            # Tenta diferentes endpoints para verificar se API está up
-            if curl -s http://localhost:3000/health > /dev/null 2>&1; then
-              echo "✅ API está rodando na porta 3000 (health)"
-              break
-            elif curl -s http://localhost:3000/ > /dev/null 2>&1; then
-              echo "✅ API está rodando na porta 3000 (root)"
-              break
-            elif curl -s http://localhost:3000/users > /dev/null 2>&1; then
-              echo "✅ API está rodando na porta 3000 (users)"
+            if curl -s http://localhost:3000/ > /dev/null 2>&1 || 
+               curl -s http://localhost:3000/health > /dev/null 2>&1 || 
+               curl -s http://localhost:3000/users > /dev/null 2>&1; then
+              echo "✅ API disponível na porta 3000"
               break
             fi
             echo "Tentativa $i/30 - Aguardando API..."
@@ -104,21 +95,20 @@ jobs:
         if: always() && !cancelled()
         continue-on-error: true
         run: |
-          echo "🚀 Iniciando testes Cypress
+          echo "🚀 Iniciando testes de API com Cypress"
           
           # Cria diretórios necessários
           mkdir -p cypress/reports cypress/videos cypress/screenshots
           
-          # Executa Cypress com configuração robusta
+          # Executa Cypress para testes de API (headless por padrão)
           npx cypress run \
-            --browser ${{ matrix.browser }} \
             --reporter mochawesome \
-            --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-${{ matrix.browser }},overwrite=false,html=false,json=true" \
+            --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-api,overwrite=false,html=false,json=true" \
             --config "video=true,screenshotOnRunFailure=true,defaultCommandTimeout=10000,requestTimeout=15000" \
             || {
               echo "⚠️ Cypress falhou, mas continuando para gerar artifacts..."
               # Cria um relatório básico para evitar falhas downstream
-              echo '{"stats":{"suites":1,"tests":1,"passes":0,"pending":0,"failures":1,"start":"2024-01-01T00:00:00.000Z","end":"2024-01-01T00:01:00.000Z","duration":60000,"testsRegistered":1,"passPercent":0,"pendingPercent":0,"other":0,"hasOther":false,"skipped":0,"hasSkipped":false},"results":[{"title":"Cypress Execution Failed","fullTitle":"Execution failed with exit code","state":"failed","err":{"message":"Cypress execution failed"}}],"meta":{"mocha":{"version":"7.0.0"},"mochawesome":{"version":"7.0.0","options":{}},"marge":{"options":{},"version":"6.2.0"}}}' > cypress/reports/mochawesome-${{ matrix.browser }}.json
+              echo '{"stats":{"suites":1,"tests":1,"passes":0,"pending":0,"failures":1,"start":"2024-01-01T00:00:00.000Z","end":"2024-01-01T00:01:00.000Z","duration":60000,"testsRegistered":1,"passPercent":0,"pendingPercent":0,"other":0,"hasOther":false,"skipped":0,"hasSkipped":false},"results":[{"title":"Cypress API Tests Failed","fullTitle":"API execution failed with exit code","state":"failed","err":{"message":"Cypress API tests failed"}}],"meta":{"mocha":{"version":"7.0.0"},"mochawesome":{"version":"7.0.0","options":{}},"marge":{"options":{},"version":"6.2.0"}}}' > cypress/reports/mochawesome-api.json
             }
         env:
           CYPRESS_baseUrl: http://localhost:3000
@@ -150,11 +140,11 @@ jobs:
             }
             
             echo "Gerando relatório HTML..."
-            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests - ${{ matrix.browser }}" || echo "⚠️ Erro na geração do relatório HTML"
+            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests" || echo "⚠️ Erro na geração do relatório HTML"
           else
             echo "⚠️ Nenhum arquivo Mochawesome JSON encontrado, criando relatório vazio completo"
             echo '{"stats":{"suites":0,"tests":0,"passes":0,"pending":0,"failures":0,"start":"2024-01-01T00:00:00.000Z","end":"2024-01-01T00:01:00.000Z","duration":0,"testsRegistered":0,"passPercent":0,"pendingPercent":0,"other":0,"hasOther":false,"skipped":0,"hasSkipped":false},"results":[],"meta":{"mocha":{"version":"10.0.0"},"mochawesome":{"version":"7.1.3","options":{"reportDir":"cypress/reports","reportTitle":"Cypress Tests"}},"marge":{"options":{"reportDir":"cypress/reports/html"},"version":"6.2.0"}}}' > cypress/reports/merged-report.json
-            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests - ${{ matrix.browser }}" || echo "⚠️ Erro na geração do relatório HTML"
+            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests" || echo "⚠️ Erro na geração do relatório HTML"
           fi
 
       - name: Upload artifacts
@@ -172,8 +162,7 @@ jobs:
         if: always() && !cancelled()
         run: |
           echo "=== RESUMO DA EXECUÇÃO ==="
-          echo "Browser: ${{ matrix.browser }}"
-          echo "Total de testes no repositório: 186 testes"
+          echo "Tipo: Testes de API REST"
           echo "API Status: $(curl -s http://localhost:3000/ > /dev/null 2>&1 && echo "✅ Online" || echo "❌ Offline")"
           echo "Videos gerados: $(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")"
           echo "Screenshots capturados: $(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")"
@@ -184,39 +173,34 @@ jobs:
             echo "Logs da API: ❌ Não encontrados"
           fi
           
-          # Mostra estrutura de testes
+          # Detecção dinâmica de categorias de testes
           echo ""
-          echo "📊 Distribuição dos 186 testes:"
-          echo "   👥 Users: 59 testes (30 negative + 13 positive + 16 business rules)"
-          echo "   🎫 Tickets: 74 testes (34 negative + 18 positive + 22 business rules)" 
-          echo "   📋 Schemas: 42 testes (19 users + 23 tickets)"
-          echo "   🔄 Integration: 6 testes"
-          echo "   ⚙️ Config: 5 testes"
-
-  api-validation:
-    runs-on: ubuntu-latest
-    needs: cypress-run
-    if: always() && !cancelled() && (needs.cypress-run.result == 'success' || needs.cypress-run.result == 'failure')
-
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Validar estrutura da API
-        run: |
+          echo "📊 Estrutura de testes detectada:"
+          TOTAL_FILES=$(find cypress/e2e -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+          echo "   📁 Total: $TOTAL_FILES arquivos de teste"
+          
+          # Scan automático de diretórios de teste
+          for dir in cypress/e2e/api/*/; do
+            if [ -d "$dir" ]; then
+              category=$(basename "$dir")
+              count=$(find "$dir" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+              case "$category" in
+                "users") echo "   👥 Users: $count arquivos" ;;
+                "tickets") echo "   🎫 Tickets: $count arquivos" ;;
+                "schemas") echo "   📋 Schemas: $count arquivos" ;;
+                "integration") echo "   🔄 Integration: $count arquivos" ;;
+                "negative") echo "   ❌ Negative: $count arquivos" ;;
+                *) echo "   📂 $category: $count arquivos" ;;
+              esac
+            fi
+          done
+          
+          # Arquivos na raiz da API
+          ROOT_FILES=$(find cypress/e2e/api -maxdepth 1 -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+          if [ "$ROOT_FILES" -gt 0 ]; then
+            echo "   ⚙️ Config/Root: $ROOT_FILES arquivos"
+          fi
+          
+          echo ""
           echo "✅ Execução dos testes Cypress completada"
-          echo ""
-          echo "📊 Resumo do repositório:"
-          echo "   🎯 Total: 186 testes automatizados"
-          echo "   📁 Arquivos: 10 arquivos de teste (.cy.js)"
-          echo "   � Categorias: Users, Tickets, Schemas, Integration, Config"
-          echo ""
-          echo "📦 Artifacts disponíveis:"
-          echo "   • cypress-results-chrome (videos, screenshots, reports)"
-          echo "   • cypress-results-firefox (videos, screenshots, reports)"
-          echo ""
-          echo "🔍 Para visualizar os resultados:"
-          echo "   1. Acesse a aba 'Actions' deste repositório"
-          echo "   2. Clique na execução do workflow"
-          echo "   3. Baixe os artifacts na seção 'Artifacts'"
-          echo "   4. Abra os relatórios HTML em cypress/reports/html/"
+          echo "📦 Artifacts disponíveis na aba Actions deste repositório"
