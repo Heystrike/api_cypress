@@ -105,18 +105,40 @@ jobs:
         uses: cypress-io/github-action@v6
         continue-on-error: true
         with:
-          browser: ${{ matrix.browser }}
-          config: video=true,screenshotOnRunFailure=true
-          command: npx cypress run --reporter junit --reporter-options mochaFile=cypress/reports/junit-results-[hash].xml
+          command: npx cypress run --browser ${{ matrix.browser }} --reporter mochawesome --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-${{ matrix.browser }}-[hash],overwrite=false,html=false,json=true" --config video=true,screenshotOnRunFailure=true
         env:
           CYPRESS_baseUrl: http://localhost:3000
           CYPRESS_apiUrl: http://localhost:3000
 
       - name: Gerar relatórios
         if: always() && !cancelled()
+        continue-on-error: true
         run: |
-          npm run report:merge
-          npm run report:generate
+          # Cria diretório de reports se não existir
+          mkdir -p cypress/reports/html
+          
+          # Lista arquivos encontrados para debug
+          echo "=== Arquivos no diretório cypress/reports ==="
+          ls -la cypress/reports/ || echo "Diretório cypress/reports não existe"
+          
+          # Verifica se existem arquivos JSON do mochawesome para merge
+          if ls cypress/reports/mochawesome*.json >/dev/null 2>&1; then
+            echo "✅ Arquivos Mochawesome JSON encontrados:"
+            ls cypress/reports/mochawesome*.json
+            
+            echo "Fazendo merge dos relatórios..."
+            npx mochawesome-merge cypress/reports/mochawesome*.json > cypress/reports/merged-report.json || {
+              echo "⚠️ Erro no merge, criando relatório vazio"
+              echo '{"stats":{"suites":0,"tests":0,"passes":0,"pending":0,"failures":0},"results":[],"meta":{"mocha":{"version":"0.0.0"},"mochawesome":{"version":"0.0.0"}}}' > cypress/reports/merged-report.json
+            }
+            
+            echo "Gerando relatório HTML..."
+            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests - ${{ matrix.browser }}" || echo "⚠️ Erro na geração do relatório HTML"
+          else
+            echo "⚠️ Nenhum arquivo Mochawesome JSON encontrado, criando relatório vazio"
+            echo '{"stats":{"suites":0,"tests":0,"passes":0,"pending":0,"failures":0},"results":[],"meta":{"mocha":{"version":"0.0.0"},"mochawesome":{"version":"0.0.0"}}}' > cypress/reports/merged-report.json
+            npx marge cypress/reports/merged-report.json --reportDir cypress/reports/html --reportTitle "Cypress Tests - ${{ matrix.browser }}" || echo "⚠️ Erro na geração do relatório HTML"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -128,25 +150,6 @@ jobs:
             cypress/screenshots/
             cypress/reports/
           retention-days: 7
-
-      - name: Upload Cypress reports
-        uses: actions/upload-artifact@v4
-        if: always() && !cancelled()
-        with:
-          name: cypress-reports-${{ matrix.browser }}
-          path: |
-            cypress/reports/
-          retention-days: 7
-
-      - name: Publish Test Results
-        uses: dorny/test-reporter@v1.9.1
-        if: always() && !cancelled()
-        continue-on-error: true
-        with:
-          name: Cypress Tests (${{ matrix.browser }})
-          path: cypress/reports/junit-*.xml
-          reporter: java-junit
-          fail-on-error: false
 
       - name: Resumo da execução
         if: always() && !cancelled()
