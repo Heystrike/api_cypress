@@ -97,6 +97,7 @@ jobs:
         with:
           browser: ${{ matrix.browser }}
           config: video=true,screenshotOnRunFailure=true
+          command: npx cypress run --reporter junit --reporter-options mochaFile=cypress/reports/junit-results-[hash].xml
         env:
           CYPRESS_baseUrl: http://localhost:3000
           CYPRESS_apiUrl: http://localhost:3000
@@ -118,13 +119,22 @@ jobs:
             cypress/reports/
           retention-days: 7
 
-      - name: Upload test results
+      - name: Upload Cypress reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cypress-reports-${{ matrix.browser }}
+          path: |
+            cypress/reports/
+          retention-days: 7
+
+      - name: Publish Test Results
         uses: dorny/test-reporter@v1.9.1
         if: always()
         with:
           name: Cypress Tests (${{ matrix.browser }})
-          path: cypress/reports/*.json
-          reporter: mochawesome-json
+          path: cypress/reports/junit-*.xml
+          reporter: java-junit
 
       - name: Resumo da execução
         if: always()
