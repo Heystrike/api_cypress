@@ -1,5 +1,11 @@
 name: Cypress Tests for Helpdesk API
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  actions: read
+
 on:
   push:
     branches: [main]
@@ -14,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         browser: [chrome, firefox]
 
@@ -31,6 +38,7 @@ jobs:
         run: npm ci
 
       - name: Setup Helpdesk API
+        if: success() && !cancelled()
         run: |
           # Tenta clonar a API Helpdesk
           if git clone https://github.com/automacaohml/helpdesk-api.git api; then
@@ -85,6 +93,7 @@ jobs:
           fi
 
       - name: Debug - Verificar status da API
+        if: always() && !cancelled()
         run: |
           echo "=== Status da API ==="
           curl -s http://localhost:3000/health || echo "Health endpoint não disponível"
@@ -92,6 +101,7 @@ jobs:
           ps aux | grep node || echo "Nenhum processo Node encontrado"
 
       - name: Executar testes Cypress
+        if: always() && !cancelled()
         uses: cypress-io/github-action@v6
         continue-on-error: true
         with:
@@ -103,14 +113,14 @@ jobs:
           CYPRESS_apiUrl: http://localhost:3000
 
       - name: Gerar relatórios
-        if: always()
+        if: always() && !cancelled()
         run: |
           npm run report:merge
           npm run report:generate
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && !cancelled()
         with:
           name: cypress-results-${{ matrix.browser }}
           path: |
@@ -121,7 +131,7 @@ jobs:
 
       - name: Upload Cypress reports
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && !cancelled()
         with:
           name: cypress-reports-${{ matrix.browser }}
           path: |
@@ -130,14 +140,16 @@ jobs:
 
       - name: Publish Test Results
         uses: dorny/test-reporter@v1.9.1
-        if: always()
+        if: always() && !cancelled()
+        continue-on-error: true
         with:
           name: Cypress Tests (${{ matrix.browser }})
           path: cypress/reports/junit-*.xml
           reporter: java-junit
+          fail-on-error: false
 
       - name: Resumo da execução
-        if: always()
+        if: always() && !cancelled()
         run: |
           echo "=== RESUMO DA EXECUÇÃO ==="
           echo "Browser: ${{ matrix.browser }}"
@@ -153,6 +165,7 @@ jobs:
   api-validation:
     runs-on: ubuntu-latest
     needs: cypress-run
+    if: always() && !cancelled() && (needs.cypress-run.result == 'success' || needs.cypress-run.result == 'failure')
 
     steps:
       - name: Checkout código
