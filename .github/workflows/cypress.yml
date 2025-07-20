@@ -204,3 +204,141 @@ jobs:
           echo ""
           echo "✅ Execução dos testes Cypress completada"
           echo "📦 Artifacts disponíveis na aba Actions deste repositório"
+
+      - name: Gerar Sumário no GitHub
+        if: always() && !cancelled()
+        run: |
+          # Extrai estatísticas dos relatórios JSON do Cypress
+          TOTAL_TESTS=0
+          PASSED_TESTS=0
+          FAILED_TESTS=0
+          SKIPPED_TESTS=0
+          
+          # Processa todos os arquivos de relatório JSON
+          if ls cypress/reports/mochawesome*.json >/dev/null 2>&1; then
+            for report in cypress/reports/mochawesome*.json; do
+              if [ -f "$report" ]; then
+                # Extrai estatísticas usando jq ou python
+                if command -v jq >/dev/null 2>&1; then
+                  TESTS=$(jq -r '.stats.tests // 0' "$report")
+                  PASSES=$(jq -r '.stats.passes // 0' "$report")
+                  FAILURES=$(jq -r '.stats.failures // 0' "$report")
+                  PENDING=$(jq -r '.stats.pending // 0' "$report")
+                else
+                  # Fallback usando grep e sed
+                  TESTS=$(grep -o '"tests":[0-9]*' "$report" | head -1 | sed 's/"tests"://' || echo "0")
+                  PASSES=$(grep -o '"passes":[0-9]*' "$report" | head -1 | sed 's/"passes"://' || echo "0")
+                  FAILURES=$(grep -o '"failures":[0-9]*' "$report" | head -1 | sed 's/"failures"://' || echo "0")
+                  PENDING=$(grep -o '"pending":[0-9]*' "$report" | head -1 | sed 's/"pending"://' || echo "0")
+                fi
+                
+                TOTAL_TESTS=$((TOTAL_TESTS + TESTS))
+                PASSED_TESTS=$((PASSED_TESTS + PASSES))
+                FAILED_TESTS=$((FAILED_TESTS + FAILURES))
+                SKIPPED_TESTS=$((SKIPPED_TESTS + PENDING))
+              fi
+            done
+          fi
+          
+          # Calcula porcentagens
+          if [ "$TOTAL_TESTS" -gt 0 ]; then
+            PASS_RATE=$((PASSED_TESTS * 100 / TOTAL_TESTS))
+            FAIL_RATE=$((FAILED_TESTS * 100 / TOTAL_TESTS))
+          else
+            PASS_RATE=0
+            FAIL_RATE=0
+          fi
+          
+          # Determina status geral
+          if [ "$FAILED_TESTS" -eq 0 ] && [ "$TOTAL_TESTS" -gt 0 ]; then
+            STATUS="✅ SUCESSO"
+            STATUS_EMOJI="🎉"
+          elif [ "$FAILED_TESTS" -gt 0 ]; then
+            STATUS="❌ FALHAS DETECTADAS"
+            STATUS_EMOJI="🔥"
+          else
+            STATUS="⚠️ NENHUM TESTE EXECUTADO"
+            STATUS_EMOJI="❓"
+          fi
+          
+          # Conta arquivos e estrutura
+          TOTAL_FILES=$(find cypress/e2e -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+          VIDEO_COUNT=$(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")
+          SCREENSHOT_COUNT=$(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")
+          
+          # Gera o GitHub Summary
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # ${STATUS_EMOJI} Relatório de Testes Cypress - Helpdesk API
+          
+          ## 📊 Estatísticas Gerais
+          
+          | Métrica | Valor | Porcentagem |
+          |---------|-------|-------------|
+          | **Status Geral** | **${STATUS}** | - |
+          | **Total de Testes** | **${TOTAL_TESTS}** | 100% |
+          | **✅ Aprovados** | ${PASSED_TESTS} | ${PASS_RATE}% |
+          | **❌ Falharam** | ${FAILED_TESTS} | ${FAIL_RATE}% |
+          | **⏭️ Ignorados** | ${SKIPPED_TESTS} | - |
+          
+          ## 📁 Estrutura de Testes
+          
+          | Categoria | Arquivos | Descrição |
+          |-----------|----------|-----------|
+          EOF
+          
+          # Adiciona estrutura dinâmica ao summary
+          for dir in cypress/e2e/api/*/; do
+            if [ -d "$dir" ]; then
+              category=$(basename "$dir")
+              count=$(find "$dir" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+              case "$category" in
+                "users") 
+                  echo "| 👥 Users | ${count} | Testes de usuários e autenticação |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+                "tickets") 
+                  echo "| 🎫 Tickets | ${count} | Testes de tickets e workflow |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+                "schemas") 
+                  echo "| 📋 Schemas | ${count} | Validação de contratos da API |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+                "integration") 
+                  echo "| 🔄 Integration | ${count} | Testes de integração completa |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+                "negative") 
+                  echo "| ❌ Negative | ${count} | Testes de casos de erro |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+                *) 
+                  echo "| 📂 ${category} | ${count} | Testes de ${category} |" >> $GITHUB_STEP_SUMMARY
+                  ;;
+              esac
+            fi
+          done
+          
+          # Adiciona arquivos na raiz se existirem
+          ROOT_FILES=$(find cypress/e2e/api -maxdepth 1 -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+          if [ "$ROOT_FILES" -gt 0 ]; then
+            echo "| ⚙️ Config/Root | ${ROOT_FILES} | Testes de configuração |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Adiciona seção de artifacts
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          
+          ## 📦 Artifacts Gerados
+          
+          | Tipo | Quantidade | Localização |
+          |------|------------|-------------|
+          | 🎬 Vídeos | ${VIDEO_COUNT} | \`cypress/videos/\` |
+          | 📸 Screenshots | ${SCREENSHOT_COUNT} | \`cypress/screenshots/\` |
+          | 📋 Relatórios HTML | 1 | \`cypress/reports/html/\` |
+          
+          ## 🔍 Como Visualizar os Resultados
+          
+          1. **📦 Download dos Artifacts**: Clique em "cypress-results" na seção Artifacts desta execução
+          2. **📋 Relatório HTML**: Abra o arquivo \`merged-report.html\` no seu navegador
+          3. **🎬 Vídeos**: Assista aos vídeos dos testes na pasta \`videos/\`
+          4. **📸 Screenshots**: Veja capturas de tela de falhas na pasta \`screenshots/\`
+          
+          ---
+          
+          **🤖 Gerado automaticamente pelo workflow de CI/CD** | **⏰ $(date '+%d/%m/%Y às %H:%M:%S')**
+          EOF
