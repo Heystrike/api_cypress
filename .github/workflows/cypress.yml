@@ -102,10 +102,24 @@ jobs:
 
       - name: Executar testes Cypress
         if: always() && !cancelled()
-        uses: cypress-io/github-action@v6
         continue-on-error: true
-        with:
-          command: npx cypress run --browser ${{ matrix.browser }} --reporter mochawesome --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-${{ matrix.browser }}-[hash],overwrite=false,html=false,json=true" --config video=true,screenshotOnRunFailure=true
+        run: |
+          echo "🚀 Iniciando testes Cypress - Browser: ${{ matrix.browser }}"
+          
+          # Cria diretórios necessários
+          mkdir -p cypress/reports cypress/videos cypress/screenshots
+          
+          # Executa Cypress com configuração robusta
+          npx cypress run \
+            --browser ${{ matrix.browser }} \
+            --reporter mochawesome \
+            --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-${{ matrix.browser }}-[hash],overwrite=false,html=false,json=true" \
+            --config "video=true,screenshotOnRunFailure=true,defaultCommandTimeout=10000,requestTimeout=15000" \
+            || {
+              echo "⚠️ Cypress falhou, mas continuando para gerar artifacts..."
+              # Cria um relatório básico para evitar falhas downstream
+              echo '{"stats":{"suites":1,"tests":1,"passes":0,"pending":0,"failures":1},"results":[{"title":"Cypress Execution Failed","fullTitle":"Execution failed with exit code","state":"failed","err":{"message":"Cypress execution failed"}}],"meta":{"mocha":{"version":"7.0.0"},"mochawesome":{"version":"7.0.0"}}}' > cypress/reports/mochawesome-${{ matrix.browser }}-fallback.json
+            }
         env:
           CYPRESS_baseUrl: http://localhost:3000
           CYPRESS_apiUrl: http://localhost:3000
@@ -156,14 +170,25 @@ jobs:
         run: |
           echo "=== RESUMO DA EXECUÇÃO ==="
           echo "Browser: ${{ matrix.browser }}"
+          echo "Total de testes no repositório: 186 testes"
           echo "API Status: $(curl -s http://localhost:3000/ > /dev/null 2>&1 && echo "✅ Online" || echo "❌ Offline")"
-          echo "Testes executados: $(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0") specs"
+          echo "Videos gerados: $(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")"
           echo "Screenshots capturados: $(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")"
+          echo "Relatórios JSON: $(find cypress/reports -name "*.json" 2>/dev/null | wc -l || echo "0")"
           if [ -f api.log ]; then
-            echo "Logs da API disponíveis: ✅"
+            echo "Logs da API: ✅ Disponíveis"
           else
             echo "Logs da API: ❌ Não encontrados"
           fi
+          
+          # Mostra estrutura de testes
+          echo ""
+          echo "📊 Distribuição dos 186 testes:"
+          echo "   👥 Users: 59 testes (30 negative + 13 positive + 16 business rules)"
+          echo "   🎫 Tickets: 74 testes (34 negative + 18 positive + 22 business rules)" 
+          echo "   📋 Schemas: 42 testes (19 users + 23 tickets)"
+          echo "   🔄 Integration: 6 testes"
+          echo "   ⚙️ Config: 5 testes"
 
   api-validation:
     runs-on: ubuntu-latest
@@ -176,6 +201,20 @@ jobs:
 
       - name: Validar estrutura da API
         run: |
-          echo "✅ Testes de API completados com sucesso"
-          echo "📊 Relatórios disponíveis nos artifacts"
-          echo "🔍 Verifique os resultados detalhados nos artifacts do job"
+          echo "✅ Execução dos testes Cypress completada"
+          echo ""
+          echo "📊 Resumo do repositório:"
+          echo "   🎯 Total: 186 testes automatizados"
+          echo "   📁 Arquivos: 10 arquivos de teste (.cy.js)"
+          echo "   🌐 Browsers: Chrome + Firefox"
+          echo "   � Categorias: Users, Tickets, Schemas, Integration, Config"
+          echo ""
+          echo "📦 Artifacts disponíveis:"
+          echo "   • cypress-results-chrome (videos, screenshots, reports)"
+          echo "   • cypress-results-firefox (videos, screenshots, reports)"
+          echo ""
+          echo "🔍 Para visualizar os resultados:"
+          echo "   1. Acesse a aba 'Actions' deste repositório"
+          echo "   2. Clique na execução do workflow"
+          echo "   3. Baixe os artifacts na seção 'Artifacts'"
+          echo "   4. Abra os relatórios HTML em cypress/reports/html/"
