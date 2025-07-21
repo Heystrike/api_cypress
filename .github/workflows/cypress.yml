@@ -317,20 +317,5 @@ jobs:
           # Adiciona seção de artifacts
           cat >> $GITHUB_STEP_SUMMARY << EOF
           
-          ## 📦 Artifacts Gerados
-          
-          | Tipo | Quantidade | Localização |
-          |------|------------|-------------|
-          | 📋 Relatórios HTML | 1 | \`cypress/reports/html/\` |
-          | � Relatórios JSON | 1+ | \`cypress/reports/\` |
-          
-          ## 🔍 Como Visualizar os Resultados
-          
-          1. **📦 Download dos Artifacts**: Clique em "cypress-results" na seção Artifacts desta execução
-          2. **📋 Relatório HTML**: Abra o arquivo \`merged-report.html\` no seu navegador
-          3. **📊 Dados JSON**: Analise os dados detalhados nos arquivos JSON
-          
-          ---
-          
           **🤖 Gerado automaticamente pelo workflow de CI/CD** | **⏰ $(date '+%d/%m/%Y às %H:%M:%S')**
           EOF
