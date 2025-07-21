@@ -278,7 +278,7 @@ jobs:
           | **Total de Testes** | **${TOTAL_TESTS}** | 100% |
           | **✅ Aprovados** | ${PASSED_TESTS} | ${PASS_RATE}% |
           | **❌ Falharam** | ${FAILED_TESTS} | ${FAIL_RATE}% |
-          | **⏭️ Ignorados** | ${SKIPPED_TESTS} | - |
+          | **⏭️ Skip's** | ${SKIPPED_TESTS} | - |
           
           ## 📁 Estrutura de Testes
           
