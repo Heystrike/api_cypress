@@ -210,6 +210,9 @@ jobs:
           FAILED_TESTS=0
           SKIPPED_TESTS=0
           
+          # Cria arquivo temporário para processar dados de suites
+          SUITE_DATA_FILE=$(mktemp)
+          
           # Processa todos os arquivos de relatório JSON
           if ls cypress/reports/mochawesome*.json >/dev/null 2>&1; then
             for report in cypress/reports/mochawesome*.json; do
@@ -220,12 +223,52 @@ jobs:
                   PASSES=$(jq -r '.stats.passes // 0' "$report")
                   FAILURES=$(jq -r '.stats.failures // 0' "$report")
                   PENDING=$(jq -r '.stats.pending // 0' "$report")
+                  
+                  # Extrai informações detalhadas por suite usando jq mais robusto
+                  echo "Processando relatório: $(basename "$report")" >&2
+                  
+                  # Extrai dados de suites e testes
+                  jq -r '
+                    if .results then
+                      .results[] | 
+                      if .suites then
+                        .suites[] |
+                        .title as $suite_title |
+                        (.passes // []) as $passes |
+                        (.failures // []) as $failures |
+                        (.pending // []) as $pending |
+                        (.skipped // []) as $skipped |
+                        "\($suite_title)|\($passes | length)|\($failures | length)|\(($pending + $skipped) | length)|\(($passes + $failures + $pending + $skipped) | length)"
+                      elif .tests then
+                        .fullTitle as $file_title |
+                        (.tests[] |
+                        .fullTitle as $test_title |
+                        .state as $test_state |
+                        ($file_title // ($test_title | split(" ")[0:2] | join(" "))) as $suite_name |
+                        "\($suite_name)|\(if $test_state == "passed" then 1 else 0 end)|\(if $test_state == "failed" then 1 else 0 end)|\(if ($test_state == "pending" or $test_state == "skipped") then 1 else 0 end)|1")
+                      else
+                        empty
+                      end
+                    else
+                      empty
+                    end
+                  ' "$report" >> "$SUITE_DATA_FILE" 2>/dev/null || {
+                    # Fallback mais simples para extrair por arquivo
+                    filename=$(basename "$report" .json | sed 's/mochawesome-//')
+                    suite_name=$(echo "$filename" | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
+                    echo "${suite_name}|${PASSES}|${FAILURES}|${PENDING}|${TESTS}" >> "$SUITE_DATA_FILE"
+                  }
                 else
                   # Fallback usando grep e sed
                   TESTS=$(grep -o '"tests":[0-9]*' "$report" | head -1 | sed 's/"tests"://' || echo "0")
                   PASSES=$(grep -o '"passes":[0-9]*' "$report" | head -1 | sed 's/"passes"://' || echo "0")
                   FAILURES=$(grep -o '"failures":[0-9]*' "$report" | head -1 | sed 's/"failures"://' || echo "0")
                   PENDING=$(grep -o '"pending":[0-9]*' "$report" | head -1 | sed 's/"pending"://' || echo "0")
+                  
+                  # Cria entrada básica para o arquivo
+                  filename=$(basename "$report" .json | sed 's/mochawesome-//')
+                  suite_name=$(echo "$filename" | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
+                  echo "${suite_name}|${PASSES}|${FAILURES}|${PENDING}|${TESTS}" >> "$SUITE_DATA_FILE"
                 fi
                 
                 TOTAL_TESTS=$((TOTAL_TESTS + TESTS))
@@ -274,6 +317,92 @@ jobs:
           | **❌ Falharam** | ${FAILED_TESTS} | ${FAIL_RATE}% |
           | **⏭️ Skip's** | ${SKIPPED_TESTS} | - |
           
+          ## 🧪 Detalhes por Suite de Testes
+          
+          | Suite | Total | ✅ Passou | ❌ Falhou | ⏭️ Skip | Taxa de Sucesso |
+          |-------|-------|----------|----------|---------|-----------------|
+          EOF
+          
+          # Adiciona estatísticas por suite se disponíveis
+          if [ -s "$SUITE_DATA_FILE" ]; then
+            # Processa dados das suites do arquivo temporário
+            declare -A SUITE_STATS
+            while IFS='|' read -r suite_name suite_passes suite_failures suite_pending suite_total; do
+              if [ -n "$suite_name" ] && [ "$suite_total" -gt 0 ]; then
+                # Soma estatísticas se a suite já existe
+                SUITE_STATS["${suite_name}_total"]=$((${SUITE_STATS["${suite_name}_total"]:-0} + suite_total))
+                SUITE_STATS["${suite_name}_passes"]=$((${SUITE_STATS["${suite_name}_passes"]:-0} + suite_passes))
+                SUITE_STATS["${suite_name}_failures"]=$((${SUITE_STATS["${suite_name}_failures"]:-0} + suite_failures))
+                SUITE_STATS["${suite_name}_pending"]=$((${SUITE_STATS["${suite_name}_pending"]:-0} + suite_pending))
+              fi
+            done < "$SUITE_DATA_FILE"
+            
+            # Exibe estatísticas por suite
+            for key in "${!SUITE_STATS[@]}"; do
+              if [[ $key == *"_total" ]]; then
+                suite_name=${key%_total}
+                suite_total=${SUITE_STATS["${suite_name}_total"]}
+                suite_passed=${SUITE_STATS["${suite_name}_passes"]:-0}
+                suite_failed=${SUITE_STATS["${suite_name}_failures"]:-0}
+                suite_pending=${SUITE_STATS["${suite_name}_pending"]:-0}
+                
+                if [ "$suite_total" -gt 0 ]; then
+                  suite_success_rate=$((suite_passed * 100 / suite_total))
+                else
+                  suite_success_rate=0
+                fi
+                
+                # Determina ícone da suite baseado no resultado
+                if [ "$suite_failed" -eq 0 ] && [ "$suite_total" -gt 0 ]; then
+                  suite_icon="🟢"
+                elif [ "$suite_failed" -gt 0 ]; then
+                  suite_icon="🔴"
+                else
+                  suite_icon="⚪"
+                fi
+                
+                echo "| ${suite_icon} **${suite_name}** | ${suite_total} | ${suite_passed} | ${suite_failed} | ${suite_pending} | ${suite_success_rate}% |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          else
+            # Fallback para análise por arquivos se não há dados de suite
+            echo "| ℹ️ **Informações por arquivo** | - | - | - | - | - |" >> $GITHUB_STEP_SUMMARY
+            
+            # Analisa cada arquivo de teste para estimar número de testes
+            for test_file in $(find cypress/e2e -name "*.cy.js" 2>/dev/null); do
+              if [ -f "$test_file" ]; then
+                file_name=$(basename "$test_file" .cy.js)
+                suite_name=$(echo "$file_name" | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
+                
+                # Conta it() calls no arquivo para estimar número de testes
+                test_count=$(grep -c "^\s*it(" "$test_file" 2>/dev/null || echo "0")
+                
+                # Determina categoria baseada no caminho
+                if [[ "$test_file" == *"/users/"* ]]; then
+                  category_icon="👥"
+                elif [[ "$test_file" == *"/tickets/"* ]]; then
+                  category_icon="🎫"
+                elif [[ "$test_file" == *"/schemas/"* ]]; then
+                  category_icon="📋"
+                elif [[ "$test_file" == *"/integration/"* ]]; then
+                  category_icon="🔄"
+                else
+                  category_icon="📄"
+                fi
+                
+                if [ "$test_count" -gt 0 ]; then
+                  echo "| ${category_icon} **${suite_name}** | ~${test_count} testes | ? | ? | ? | Não executado |" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            done
+            
+            # Separador para indicar que são estimativas
+            echo "| | | | | | |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⚠️ **Nota** | Dados acima são estimados baseados na estrutura dos arquivos | | | | |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          
           ## 📁 Estrutura de Testes
           
           | Categoria | Arquivos | Descrição |
@@ -319,3 +448,6 @@ jobs:
           
           **🤖 Gerado automaticamente pelo workflow de CI/CD** | **⏰ $(date '+%d/%m/%Y às %H:%M:%S')**
           EOF
+          
+          # Limpa arquivo temporário
+          rm -f "$SUITE_DATA_FILE"
