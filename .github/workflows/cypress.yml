@@ -98,13 +98,13 @@ jobs:
           echo "🚀 Iniciando testes de API com Cypress"
           
           # Cria diretórios necessários
-          mkdir -p cypress/reports cypress/videos cypress/screenshots
+          mkdir -p cypress/reports
           
           # Executa Cypress para testes de API (headless por padrão)
           npx cypress run \
             --reporter mochawesome \
             --reporter-options "reportDir=cypress/reports,reportFilename=mochawesome-api,overwrite=false,html=false,json=true" \
-            --config "video=true,screenshotOnRunFailure=true,defaultCommandTimeout=10000,requestTimeout=15000" \
+            --config "video=false,screenshotOnRunFailure=false,defaultCommandTimeout=10000,requestTimeout=15000" \
             || {
               echo "⚠️ Cypress falhou, mas continuando para gerar artifacts..."
               # Cria um relatório básico para evitar falhas downstream
@@ -153,8 +153,6 @@ jobs:
         with:
           name: cypress-results
           path: |
-            cypress/videos/
-            cypress/screenshots/
             cypress/reports/
           retention-days: 7
 
@@ -164,8 +162,6 @@ jobs:
           echo "=== RESUMO DA EXECUÇÃO ==="
           echo "Tipo: Testes de API REST"
           echo "API Status: $(curl -s http://localhost:3000/ > /dev/null 2>&1 && echo "✅ Online" || echo "❌ Offline")"
-          echo "Videos gerados: $(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")"
-          echo "Screenshots capturados: $(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")"
           echo "Relatórios JSON: $(find cypress/reports -name "*.json" 2>/dev/null | wc -l || echo "0")"
           if [ -f api.log ]; then
             echo "Logs da API: ✅ Disponíveis"
@@ -263,8 +259,6 @@ jobs:
           
           # Conta arquivos e estrutura
           TOTAL_FILES=$(find cypress/e2e -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
-          VIDEO_COUNT=$(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")
-          SCREENSHOT_COUNT=$(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")
           
           # Gera o GitHub Summary
           cat >> $GITHUB_STEP_SUMMARY << EOF
@@ -327,16 +321,14 @@ jobs:
           
           | Tipo | Quantidade | Localização |
           |------|------------|-------------|
-          | 🎬 Vídeos | ${VIDEO_COUNT} | \`cypress/videos/\` |
-          | 📸 Screenshots | ${SCREENSHOT_COUNT} | \`cypress/screenshots/\` |
           | 📋 Relatórios HTML | 1 | \`cypress/reports/html/\` |
+          | � Relatórios JSON | 1+ | \`cypress/reports/\` |
           
           ## 🔍 Como Visualizar os Resultados
           
           1. **📦 Download dos Artifacts**: Clique em "cypress-results" na seção Artifacts desta execução
           2. **📋 Relatório HTML**: Abra o arquivo \`merged-report.html\` no seu navegador
-          3. **🎬 Vídeos**: Assista aos vídeos dos testes na pasta \`videos/\`
-          4. **📸 Screenshots**: Veja capturas de tela de falhas na pasta \`screenshots/\`
+          3. **📊 Dados JSON**: Analise os dados detalhados nos arquivos JSON
           
           ---
           
