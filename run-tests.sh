@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script para execução rápida de testes
-# Uso: ./run-tests.sh [tipo] [browser]
+# Script para execução rápida de testes de API
+# Uso: ./run-tests.sh [tipo]
 # Exemplos:
 #   ./run-tests.sh                    # Executa todos os testes
 #   ./run-tests.sh users              # Executa apenas testes de usuários
-#   ./run-tests.sh tickets chrome     # Executa testes de tickets no Chrome
+#   ./run-tests.sh tickets            # Executa testes de tickets
 
 set -e
 
@@ -67,51 +67,60 @@ check_api() {
 # Executa testes baseado no tipo
 run_tests() {
     local test_type=$1
-    local browser=$2
     
+    # Casos especiais hardcoded
     case $test_type in
         "config")
             log_info "Executando testes de configuração (sem API)..."
-            npx cypress run --spec 'cypress/e2e/api/test-config.cy.js' ${browser:+--browser $browser}
+            npx cypress run --spec 'cypress/e2e/api/test-config.cy.js'
+            return
             ;;
-        "users")
-            log_info "Executando testes de usuários..."
-            npm run test:users -- ${browser:+--browser $browser}
-            ;;
-        "tickets")
-            log_info "Executando testes de tickets..."
-            npm run test:tickets -- ${browser:+--browser $browser}
-            ;;
-        "schemas")
-            log_info "Executando testes de schemas..."
-            npm run test:schemas -- ${browser:+--browser $browser}
-            ;;
-        "negative")
-            log_info "Executando testes negativos..."
-            npm run test:negative -- ${browser:+--browser $browser}
-            ;;
-        "integration")
-            log_info "Executando testes de integração..."
-            npx cypress run --spec 'cypress/e2e/api/integration/**/*' ${browser:+--browser $browser}
+        "root")
+            log_info "Executando testes na raiz..."
+            npx cypress run --spec 'cypress/e2e/api/*.cy.js'
+            return
             ;;
         "all"|"")
             log_info "Executando todos os testes..."
-            npm test -- ${browser:+--browser $browser}
-            ;;
-        *)
-            log_error "Tipo de teste inválido: $test_type"
-            echo ""
-            echo "Tipos disponíveis:"
-            echo "  config      - Testes de configuração (sem API)"
-            echo "  users       - Testes de usuários"
-            echo "  tickets     - Testes de tickets"
-            echo "  schemas     - Testes de schemas"
-            echo "  negative    - Testes negativos"
-            echo "  integration - Testes de integração"
-            echo "  all         - Todos os testes (padrão)"
-            exit 1
+            npm test
+            return
             ;;
     esac
+    
+    # Detecção dinâmica de diretórios
+    if [ -d "cypress/e2e/api/$test_type" ]; then
+        test_count=$(find "cypress/e2e/api/$test_type" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+        if [ "$test_count" -gt 0 ]; then
+            log_info "Executando testes de $test_type ($test_count arquivos)..."
+            npx cypress run --spec "cypress/e2e/api/$test_type/**/*"
+        else
+            log_error "Nenhum arquivo de teste encontrado em cypress/e2e/api/$test_type"
+            exit 1
+        fi
+    else
+        # Mostra tipos disponíveis dinamicamente
+        log_error "Tipo de teste inválido: $test_type"
+        echo ""
+        echo "Tipos disponíveis:"
+        echo "  config      - Testes de configuração (sem API)"
+        
+        # Scan dinâmico
+        for dir in cypress/e2e/api/*/; do
+            if [ -d "$dir" ]; then
+                category=$(basename "$dir")
+                count=$(find "$dir" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+                echo "  $category$(printf '%*s' $((12-${#category})) '') - $count arquivos"
+            fi
+        done
+        
+        root_files=$(find cypress/e2e/api -maxdepth 1 -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+        if [ "$root_files" -gt 0 ]; then
+            echo "  root        - $root_files arquivos na raiz"
+        fi
+        
+        echo "  all         - Todos os testes (padrão)"
+        exit 1
+    fi
 }
 
 # Gera relatórios
@@ -130,31 +139,43 @@ generate_reports() {
 # Função principal
 main() {
     local test_type=$1
-    local browser=$2
     
     echo "🧪 Executando testes da Helpdesk API"
     echo "=================================="
     
+    # Detecta automaticamente os tipos de teste disponíveis
+    get_available_test_types() {
+        echo "Tipos disponíveis:"
+        echo "  config      - Testes de configuração (sem API) ✅"
+        
+        # Scan dinâmico de diretórios
+        for dir in cypress/e2e/api/*/; do
+            if [ -d "$dir" ]; then
+                category=$(basename "$dir")
+                count=$(find "$dir" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+                echo "  $category$(printf '%*s' $((12-${#category})) '') - Testes de $category ($count arquivos)"
+            fi
+        done
+        
+        # Verifica arquivos na raiz
+        root_files=$(find cypress/e2e/api -maxdepth 1 -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+        if [ "$root_files" -gt 0 ]; then
+            echo "  root        - Testes na raiz ($root_files arquivos)"
+        fi
+        
+        echo "  all         - Todos os testes (requer API)"
+    }
+    
     # Mostra ajuda para tipos inválidos ou help
     if [ "$test_type" = "help" ] || [ "$test_type" = "--help" ] || [ "$test_type" = "-h" ]; then
         echo ""
-        echo "Uso: ./run-tests.sh [tipo] [browser]"
+        echo "Uso: ./run-tests.sh [tipo]"
         echo ""
-        echo "Tipos disponíveis:"
-        echo "  config      - Testes de configuração (sem API) ✅"
-        echo "  users       - Testes de usuários (requer API)"
-        echo "  tickets     - Testes de tickets (requer API)"
-        echo "  schemas     - Testes de schemas (requer API)"
-        echo "  negative    - Testes negativos (requer API)"
-        echo "  integration - Testes de integração (requer API)"
-        echo "  all         - Todos os testes (requer API)"
-        echo ""
-        echo "Browsers disponíveis:"
-        echo "  chrome, firefox, edge, electron (padrão)"
+        get_available_test_types
         echo ""
         echo "Exemplos:"
         echo "  ./run-tests.sh config           # Testes sem API"
-        echo "  ./run-tests.sh users chrome     # Testes de usuários no Chrome"
+        echo "  ./run-tests.sh users            # Testes de usuários"
         echo "  ./run-tests.sh all              # Todos os testes"
         echo ""
         echo "Para usar com API:"
@@ -173,27 +194,59 @@ main() {
     fi
     
     # Executa testes
-    run_tests "$test_type" "$browser"
+    run_tests "$test_type"
     
     # Gera relatórios
     generate_reports
     
     log_success "Testes completados! 🎉"
     
-    # Mostra resumo
+    # Resumo dinâmico
     echo ""
-    echo "📊 Resumo:"
-    if [ -d "cypress/screenshots" ] && [ "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
-        echo "   Screenshots: cypress/screenshots/"
-    fi
+    echo "📊 Resumo da Execução:"
+    echo "   🎯 Tipo executado: ${test_type:-"all"}"
+    
+    # Estrutura de testes detectada
+    TOTAL_FILES=$(find cypress/e2e -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+    echo "   📁 Total de arquivos de teste: $TOTAL_FILES"
+    
+    # Artifacts gerados
     if [ -d "cypress/videos" ] && [ "$(ls -A cypress/videos 2>/dev/null)" ]; then
-        echo "   Vídeos: cypress/videos/"
+        video_count=$(find cypress/videos -name "*.mp4" 2>/dev/null | wc -l || echo "0")
+        echo "   🎬 Vídeos gerados: $video_count"
+    fi
+    if [ -d "cypress/screenshots" ] && [ "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
+        screenshot_count=$(find cypress/screenshots -name "*.png" 2>/dev/null | wc -l || echo "0")
+        echo "   📸 Screenshots: $screenshot_count"
     fi
     if [ -f "cypress/reports/html/index.html" ]; then
-        echo "   Relatório: cypress/reports/html/index.html"
+        echo "   📋 Relatório HTML: cypress/reports/html/index.html"
     fi
     if [ -f "cypress/reports/html/merged-report.html" ]; then
-        echo "   Relatório Consolidado: cypress/reports/html/merged-report.html"
+        echo "   📋 Relatório Consolidado: cypress/reports/html/merged-report.html"
+    fi
+    
+    # Mostra estrutura de testes disponível
+    echo ""
+    echo "📂 Estrutura de testes disponível:"
+    for dir in cypress/e2e/api/*/; do
+        if [ -d "$dir" ]; then
+            category=$(basename "$dir")
+            count=$(find "$dir" -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+            case "$category" in
+                "users") echo "   👥 Users: $count arquivos" ;;
+                "tickets") echo "   🎫 Tickets: $count arquivos" ;;
+                "schemas") echo "   📋 Schemas: $count arquivos" ;;
+                "integration") echo "   🔄 Integration: $count arquivos" ;;
+                "negative") echo "   ❌ Negative: $count arquivos" ;;
+                *) echo "   📂 $category: $count arquivos" ;;
+            esac
+        fi
+    done
+    
+    root_files=$(find cypress/e2e/api -maxdepth 1 -name "*.cy.js" 2>/dev/null | wc -l || echo "0")
+    if [ "$root_files" -gt 0 ]; then
+        echo "   ⚙️ Config/Root: $root_files arquivos"
     fi
 }
 

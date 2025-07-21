@@ -7,8 +7,6 @@
     "cypress:open": "cypress open",
     "cypress:run": "cypress run",
     "cypress:run:headed": "cypress run --headed",
-    "cypress:run:chrome": "cypress run --browser chrome",
-    "cypress:run:firefox": "cypress run --browser firefox",
     "test": "cypress run",
     "test:api": "cypress run --spec 'cypress/e2e/api/**/*'",
     "test:users": "cypress run --spec 'cypress/e2e/api/users/**/*'",
@@ -16,7 +14,7 @@
     "test:schemas": "cypress run --spec 'cypress/e2e/api/schemas/**/*'",
     "test:negative": "cypress run --spec 'cypress/e2e/api/negative/**/*'",
     "report": "cypress run --reporter mochawesome",
-    "report:merge": "mochawesome-merge cypress/reports/*.json > cypress/reports/merged-report.json",
+    "report:merge": "mochawesome-merge cypress/reports/mochawesome*.json > cypress/reports/merged-report.json",
     "report:generate": "marge cypress/reports/merged-report.json --reportDir cypress/reports/html"
   },
   "keywords": [
